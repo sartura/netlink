@@ -2,12 +2,14 @@
 package nl
 
 import (
-	"bytes"
+	"bufio"
+    "bytes"
 	"encoding/binary"
 	"fmt"
 	"net"
+    "os"
 	"runtime"
-	"sync"
+    "sync"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -616,6 +618,13 @@ func (s *NetlinkSocket) Send(request *NetlinkRequest) error {
 	if err := unix.Sendto(fd, request.Serialize(), 0, &s.lsa); err != nil {
 		return err
 	}
+
+    // Write non-serialized data to 'plain' file:
+    request.Write("/tmp/netlink_plain", false)
+
+    // Write serialized data to 'serialized' file
+    request.Write("/tmp/netlink_serialized", true)
+
 	return nil
 }
 
@@ -754,4 +763,29 @@ func (sh *SocketHandle) Close() {
 	if sh.Socket != nil {
 		sh.Socket.Close()
 	}
+}
+
+// Write out the byte stream to a new file
+func (req *NetlinkRequest) Write(filename string, serial bool) (int, error) {
+    f, err := os.Create(filename)
+    if err != nil {
+        return -1, err
+    }
+    defer f.Close()
+
+    w := bufio.NewWriter(f)
+    var n int
+    if serial {
+        // Write out serialized data
+        n, err = w.Write(req.Serialize())
+    } else {
+        // Write out reqular data
+		fmt.Fprintf(f, fmt.Sprintf("%x", req.Data))
+    }
+    if err != nil {
+        return -2, nil
+    }
+    w.Flush()
+
+    return n, nil
 }
